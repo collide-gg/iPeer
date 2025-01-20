@@ -92,30 +92,57 @@ const AdminSetupAccount = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsLoading(true);
-    
-    if (formData.newPassword !== formData.confirmPassword) {
-      setError('Passwords do not match');
-      return;
-    }
-
-    if (!Object.values(passwordStrength).every(Boolean)) {
-      setError('Please meet all password requirements');
-      return;
-    }
+    setError('');
 
     try {
-      const response = await axios.post(`${API_CONFIG.BASE_URL}/api/admin/setup-account`, {
-        uid: user.uid,
-        ...formData
-      });
+        // Check auth state explicitly
+        if (!auth.currentUser) {
+            throw new Error('Not authenticated');
+        }
 
-      navigate('/admin/dashboard');
+        // Get fresh token
+        const token = await auth.currentUser.getIdToken(true);
+        
+        if (!token) {
+            throw new Error('Failed to get authentication token');
+        }
+
+        console.log('Token obtained:', token ? 'Yes' : 'No'); // Debug log
+
+        const response = await axios.post(
+            `${API_CONFIG.BASE_URL}/api/admin/setup-account`,
+            {
+                uid: user.uid,
+                ...formData
+            },
+            {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            }
+        );
+
+        navigate('/admin/dashboard');
     } catch (error) {
-      setError(error.response?.data?.error || 'Setup failed');
+        console.error('Setup error:', {
+            message: error.message,
+            response: error.response?.data,
+            status: error.response?.status
+        });
+        
+        if (error.message === 'Not authenticated') {
+            setError('Please sign in again');
+            // Redirect to login
+            navigate('/login');
+            return;
+        }
+
+        setError(error.response?.data?.error || error.message || 'Setup failed');
     } finally {
-      setIsLoading(false);
+        setIsLoading(false);
     }
-  };
+};
 
   const [formData, setFormData] = useState({
     username: '' || user.username || initialData.username,
