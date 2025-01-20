@@ -1027,23 +1027,10 @@ const VideoCall = ({ roomId, setRoomId, userRole, clientId }) => {
         if (userRole === 'peer-counselor') {
             const endTime = new Date().toISOString();
             try {
-                // Send end meeting signal to all participants
-                if (dataChannel && dataChannel.readyState === 'open') {
-                    dataChannel.send('endMeeting');
-                }
-    
-                // Get current user token
+                // Get current user token first to ensure authentication
                 const token = await auth.currentUser.getIdToken();
                 
-                // Update call document status instead of deleting
-                const callDoc = doc(firestore, 'calls', roomId);
-                const callData = (await getDoc(callDoc)).data();
-                await updateDoc(callDoc, {
-                    status: 'ended',
-                    endedAt: endTime
-                });
-
-                // Update peer counselor status to available
+                // Update peer counselor status first as it's critical
                 await axios.put(
                     `${API_CONFIG.BASE_URL}/api/peer-counselor/status/${auth.currentUser.uid}`,
                     {
@@ -1054,54 +1041,77 @@ const VideoCall = ({ roomId, setRoomId, userRole, clientId }) => {
                         headers: { Authorization: `Bearer ${token}` }
                     }
                 );
-
-                // Create session record
+    
+                // Send end meeting signal
+                if (dataChannel?.readyState === 'open') {
+                    dataChannel.send('endMeeting');
+                }
+    
+                // Get call data and update status
+                const callDoc = doc(firestore, 'calls', roomId);
+                const callData = (await getDoc(callDoc)).data();
+                
+                if (!callData) {
+                    throw new Error('Call data not found');
+                }
+    
+                await updateDoc(callDoc, {
+                    status: 'ended',
+                    endedAt: endTime
+                });
+    
+                // Create session with better error handling
                 const sessionData = {
                     roomId,
                     clientId: callData.clientId,
                     counselorId: callData.counselorId,
-                    startTime: callData.startTime,
-                    endTime,
+                    // Convert Firestore timestamp to ISO string with proper timezone handling
+                    startTime: callData.acceptedAt.toDate ? 
+                        callData.acceptedAt.toDate().toISOString() : 
+                        new Date(callData.acceptedAt).toISOString(),
+                    endTime: new Date().toISOString(),
                     status: 'completed',
-                    duration: new Date(endTime) - new Date(callData.startTime),
-                    notes: sessionNotes,
+                    // Calculate duration with proper timestamp conversion
+                    duration: Math.floor((new Date() - (callData.acceptedAt.toDate ? 
+                        callData.acceptedAt.toDate() : 
+                        new Date(callData.acceptedAt))) / 1000),
+                    notes: sessionNotes || '',
                     type: callData.appointmentId ? 'Appointment' : 'Instant'
                 };
     
-                try {
-                    const response = await axios.post(
-                        `${API_CONFIG.BASE_URL}/api/sessions`, 
-                        { sessionData, token },
-                        { 
-                            headers: { 
-                                'Content-Type': 'application/json',
-                                'Authorization': `Bearer ${token}`
-                            }
+                const response = await axios.post(
+                    `${API_CONFIG.BASE_URL}/api/sessions`, 
+                    { sessionData },  // Remove redundant token in body
+                    { 
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
                         }
-                    );
-    
-                    if (!response.data?.sessionId) {
-                        throw new Error('Invalid session creation response');
                     }
+                );
     
-                } catch (error) {
-                    throw new Error(`Session creation failed: ${error.message}`);
+                if (!response.data?.sessionId) {
+                    console.error('Session creation response:', response.data);
+                    throw new Error('Session creation failed: Invalid response format');
                 }
     
-                cleanup();
+                await cleanup();
                 alert('Session ended successfully');
+                navigate('/');
+    
             } catch (error) {
-                console.error('Error ending session:', error);
-                alert('Error ending session');
+                console.error('Detailed error:', error.response?.data || error.message);
+                // Still perform cleanup even if session creation fails
+                await cleanup();
+                alert(`Session ended but there was an error saving the session data. Please contact support.`);
+                navigate('/');
             }
         } else {
-            cleanup();
+            await cleanup();
             alert('You have left the session');
+            navigate('/');
         }
-        
-        navigate('/');
-    }
-    
+    }    
 
     return (
         <div className="relative w-full h-[calc(100vh-4rem)] md:h-[calc(100vh-8rem)] bg-gray-900">
