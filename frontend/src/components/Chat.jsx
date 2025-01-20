@@ -15,6 +15,7 @@ const Chat = ({ roomId, isOpen, onClose }) => {
     const currentUser = auth.currentUser;
     const audioRef = useRef(new Audio(notification));
     const [previousMessagesLength, setPreviousMessagesLength] = useState(0);
+    const [decryptedMessages, setDecryptedMessages] = useState({});
 
     useEffect(() => {
         const fetchUserData = async () => {
@@ -42,6 +43,37 @@ const Chat = ({ roomId, isOpen, onClose }) => {
         };
         fetchUserData();
     }, [currentUser]);
+
+    useEffect(() => {
+        const decryptMessages = async () => {
+            const newDecryptedMessages = {};
+            
+            for (let i = 0; i < messages.length; i++) {
+                const msg = messages[i];
+                if (!msg.text || typeof msg.text === 'string') {
+                    newDecryptedMessages[i] = msg.text;
+                    continue;
+                }
+                
+                try {
+                    const token = await auth.currentUser.getIdToken();
+                    const response = await axios.post(
+                        `${API_CONFIG.BASE_URL}/api/messages/decrypt`,
+                        { encryptedMessage: msg.text },
+                        { headers: { Authorization: `Bearer ${token}` }}
+                    );
+                    newDecryptedMessages[i] = response.data.decryptedMessage;
+                } catch (error) {
+                    console.error('Decryption failed:', error);
+                    newDecryptedMessages[i] = '⚠️ Message unavailable';
+                }
+            }
+            
+            setDecryptedMessages(newDecryptedMessages);
+        };
+    
+        decryptMessages();
+    }, [messages]);
 
     useEffect(() => {
         if (chatBoxRef.current) {
@@ -88,25 +120,32 @@ const Chat = ({ roomId, isOpen, onClose }) => {
         const messageText = messageInputRef.current.value.trim();
         if (messageText) {
             try {
+                const token = await auth.currentUser.getIdToken();
+                
+                // Send to backend for encryption
+                const encryptedResponse = await axios.post(
+                    `${API_CONFIG.BASE_URL}/api/messages/encrypt`,
+                    { message: messageText },
+                    { headers: { Authorization: `Bearer ${token}` }}
+                );
+    
                 const callDoc = doc(firestore, 'calls', roomId);
                 const newMessage = {
-                    text: messageText,
+                    text: encryptedResponse.data.encryptedMessage,
                     sender: userData?.fullName || currentUser.displayName || 'Anonymous',
                     timestamp: new Date().toISOString()
                 };
-
+    
                 const docSnap = await getDoc(callDoc);
                 const currentMessages = docSnap.data()?.messages || [];
-                
-                const updatedMessages = [...currentMessages, newMessage];
-                await updateDoc(callDoc, { messages: updatedMessages });
+                await updateDoc(callDoc, { messages: [...currentMessages, newMessage] });
                 messageInputRef.current.value = '';
             } catch (error) {
                 console.error('Error sending message:', error);
                 alert('Failed to send message. Please try again.');
             }
         }
-    }
+    }    
 
     return (
         <div className={`fixed inset-0 md:inset-auto md:right-0 md:top-0 h-full w-full md:w-[380px] 
@@ -142,13 +181,15 @@ const Chat = ({ roomId, isOpen, onClose }) => {
                                         ? 'bg-green-600 text-white ml-auto rounded-tr-none'
                                         : 'bg-white text-gray-800 rounded-tl-none shadow-sm'
                                 }`}>
-                                    <p className="text-sm">{msg.text}</p>
+                                    <p className="text-sm">
+                                        {decryptedMessages[index]}
+                                    </p>
                                 </div>
                             </div>
                         </div>
-                    ))}
+                        ))}
                 </div>
-    
+
                 {/* Input */}
                 <div className="p-3 bg-white border-t">
                     <div className="flex items-center gap-2">

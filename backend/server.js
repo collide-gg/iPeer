@@ -11,6 +11,7 @@ const notificationsRoutes = require('./routes/notifications');
 const sessionHistoryRoutes = require('./routes/sessionHistory');
 const schoolsRouter = require('./routes/schools');
 const adminRoutes = require('./routes/admin');
+const messagesRoutes = require('./routes/messages');
 const cors = require('cors');
 const corsOptions = require('./config/cors.config');
 
@@ -27,6 +28,7 @@ app.get('/', (req, res) => {
 app.use('/api/admin', adminRoutes);
 app.use('/api', schoolsRouter);
 
+app.use('/api', messagesRoutes);
 app.use('/api', authRoutes);
 app.use('/api', appointmentRoutes);
 app.use('/api', peerCounselorRoutes);
