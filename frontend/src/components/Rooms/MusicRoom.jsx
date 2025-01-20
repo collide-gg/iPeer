@@ -18,8 +18,8 @@ const PLAYLISTS = {
     color: 'from-[#508D4E] to-[#80ED99]'
   },
   relax: { 
-    id: 'PLQkQfzsIUwRYHN4pxZ-g3KCF_yPr9Xz_m',
-    embedUrl: 'https://www.youtube.com/embed/videoseries?list=OLAK5uy_nJmvBhVY4tpslZ3Cue3yHr4k93U8M8bVc&autoplay=1',
+    id: 'neV3EPgvZ3g',
+    embedUrl: 'https://www.youtube.com/embed/neV3EPgvZ3g?autoplay=1',
     name: 'Chill & Relax',
     description: 'Soothing melodies for relaxation',
     icon: <HeartIcon className="w-6 h-6 text-white" />,
