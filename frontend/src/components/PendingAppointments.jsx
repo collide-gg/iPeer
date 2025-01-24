@@ -14,6 +14,35 @@ const PendingAppointments = ({ appointments, clients, peerCounselors, handleAppo
       minute: '2-digit',
       hourCycle: 'h23' 
   });
+  const [processingAppointments, setProcessingAppointments] = useState({});
+  const [rescheduledAppointments, setRescheduledAppointments] = useState([]);
+  const TIME_SLOTS = [
+    "08:00",
+    "09:00",
+    "10:00",
+    "11:00",
+    "13:00",
+    "14:00",
+    "15:00",
+    "16:00",
+    "17:00",
+    "18:00"
+  ];
+
+  const getCurrentDateTime = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+  
+    return {
+      currentDate: `${year}-${month}-${day}`,
+      currentTime: `${hours}:${minutes}`
+    };
+  };
+  
 
   const formatTo24Hour = (time) => {
       const [hours, minutes] = time.split(':');
@@ -97,26 +126,42 @@ const PendingAppointments = ({ appointments, clients, peerCounselors, handleAppo
             <label className="text-base font-medium text-gray-700">
               Select Time
             </label>
-            <div className="grid grid-cols-3 gap-3">
-              {availableTimeSlots.length > 0 ? (
-                availableTimeSlots.map((slot) => (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3">
+              {TIME_SLOTS.map((slot) => {
+                const { currentDate, currentTime } = getCurrentDateTime();
+                const isTimeSlotPassed = newDate?.toISOString().split('T')[0] === currentDate && slot < currentTime;
+                
+                return (
                   <button
                     key={slot}
                     type="button"
                     onClick={() => setSelectedTime(slot)}
-                    className={`py-3 px-4 rounded-xl text-sm font-medium transition-all duration-200 ${
+                    disabled={!availableTimeSlots.includes(slot) || isTimeSlotPassed}
+                    className={`py-3 sm:py-4 px-4 sm:px-6 rounded-xl text-sm sm:text-base font-medium transition-all duration-200 ${
                       selectedTime === slot
                         ? 'bg-green-500 text-white shadow-lg transform scale-105'
-                        : 'bg-white border-2 border-gray-200 text-gray-700 hover:border-green-400 hover:shadow'
+                        : availableTimeSlots.includes(slot) && !isTimeSlotPassed
+                          ? 'bg-white border-2 border-gray-200 text-gray-700 hover:border-green-400 hover:shadow'
+                          : 'bg-gray-100 border-2 border-gray-200 text-gray-400 cursor-not-allowed'
                     }`}
                   >
                     {slot}
                   </button>
-                ))
-              ) : (
-                <div className="col-span-3 text-center p-4 bg-gray-50 rounded-xl border-2 border-gray-200">
-                  <p className="text-gray-600">No available time slots for this date</p>
-                </div>
+                );
+              })}
+              {TIME_SLOTS.length === 0 && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="col-span-full text-center p-4 sm:p-8 bg-gray-50 rounded-xl border-2 border-gray-200"
+                >
+                  <div className="text-sm sm:text-base text-gray-600 font-medium">
+                    No available time slots for this date
+                  </div>
+                  <div className="mt-2 text-xs sm:text-sm text-gray-500">
+                    Please select a different date to view other available slots
+                  </div>
+                </motion.div>
               )}
             </div>
           </div>
@@ -234,29 +279,44 @@ const PendingAppointments = ({ appointments, clients, peerCounselors, handleAppo
             </div>
           )}
 
-            {role === 'peer-counselor' && handleAppointmentStatus && (
+          {role === 'peer-counselor' && handleAppointmentStatus && (
               <div className="mt-4 flex gap-2">
-                <button
-                  onClick={() => handleAppointmentStatus(appointment.id, 'accepted')}
-                  className="bg-green-500 text-white px-6 py-2 rounded-lg hover:bg-green-600 transition-colors"
-                >
-                  Accept
-                </button>
-                <button
-                  onClick={() => handleAppointmentStatus(appointment.id, 'declined')}
-                  className="bg-red-500 text-white px-6 py-2 rounded-lg hover:bg-red-600 transition-colors"
-                >
-                  Decline
-                </button>
-                <button
-                  onClick={() => {
-                    setSelectedAppointment(appointment);
-                    setIsRescheduling(true);
-                  }}
-                  className="bg-yellow-500 text-white px-6 py-2 rounded-lg hover:bg-yellow-600 transition-colors"
-                >
-                  Reschedule
-                </button>
+                {rescheduledAppointments.includes(appointment.id) ? (
+                  <p className="text-green-600 font-medium">Reschedule request sent</p>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => handleAppointmentStatus(appointment.id, 'accepted')}
+                      disabled={processingAppointments[appointment.id]}
+                      className={`bg-green-500 text-white px-6 py-2 rounded-lg transition-colors ${
+                        processingAppointments[appointment.id] ? 'opacity-50 cursor-not-allowed' : 'hover:bg-green-600'
+                      }`}
+                    >
+                      Accept
+                    </button>
+                    <button
+                      onClick={() => handleAppointmentStatus(appointment.id, 'declined')}
+                      disabled={processingAppointments[appointment.id]}
+                      className={`bg-red-500 text-white px-6 py-2 rounded-lg transition-colors ${
+                        processingAppointments[appointment.id] ? 'opacity-50 cursor-not-allowed' : 'hover:bg-red-600'
+                      }`}
+                    >
+                      Decline
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSelectedAppointment(appointment);
+                        setIsRescheduling(true);
+                      }}
+                      disabled={processingAppointments[appointment.id]}
+                      className={`bg-yellow-500 text-white px-6 py-2 rounded-lg transition-colors ${
+                        processingAppointments[appointment.id] ? 'opacity-50 cursor-not-allowed' : 'hover:bg-yellow-600'
+                      }`}
+                    >
+                      Reschedule
+                    </button>
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -271,7 +331,10 @@ const PendingAppointments = ({ appointments, clients, peerCounselors, handleAppo
             setSelectedAppointment(null);
           }}
           onSubmit={async (appointmentId, newDate, newTime, newDescription) => {
+            setProcessingAppointments(prev => ({ ...prev, [appointmentId]: true }));
             await handleReschedule(appointmentId, newDate, newTime, newDescription);
+            setRescheduledAppointments(prev => [...prev, appointmentId]);
+            setProcessingAppointments(prev => ({ ...prev, [appointmentId]: false }));
             setIsRescheduling(false);
             setSelectedAppointment(null);
           }}

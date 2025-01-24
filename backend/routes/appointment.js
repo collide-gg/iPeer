@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { createAppointment, getAppointmentsClient, getAppointmentsPeer, rescheduleAppointment } = require('../models/appointment');
 const { db } = require('../firebaseAdmin');
-const { sendAppointmentConfirmation, sendAppointmentRejection } = require('../services/emailService');
+const { sendAppointmentConfirmation, sendAppointmentRejection, sendRescheduleNotification, sendRescheduleResponseNotification } = require('../services/emailService');
 const { createNotification } = require('../models/notifications');
 const { encrypt, decrypt } = require('../utils/encryption.utils');
 const { isTimeSlotAvailable, getAvailableTimeSlots } = require('../utils/timeslot');
@@ -260,37 +260,52 @@ router.put('/appointments/:appointmentId/status', async (req, res) => {
   }
 });
 
-// router.put('/appointments/:appointmentId/reschedule', async (req, res) => {
-//   try {
-//     const { appointmentId } = req.params;
-//     const { newDate, newTime, newDescription } = req.body;
-//     console.log('Received reschedule data:', { appointmentId, newDate, newTime, newDescription });
-  
-//     const result = await rescheduleAppointment(appointmentId, newDate, newTime, newDescription);
-    
-//     const appointmentData = await db.collection('appointments').doc(appointmentId).get();
-//     const data = appointmentData.data();
-
-//     await createNotification(data.clientId, {
-//       type: 'appointment_reschedule_request',
-//       title: 'Appointment Reschedule Request',
-//       message: `Your appointment has been requested to reschedule to ${newDate} at ${newTime}`,
-//       appointmentId,
-//       requiresAction: true
-//     });
-
-//     res.status(200).json(result);
-//   } catch (error) {
-//     console.error('Error rescheduling appointment:', error);
-//     res.status(500).json({ error: 'Failed to reschedule appointment' });
-//   }
-// });
-
 router.put('/appointments/:appointmentId/reschedule', async (req, res) => {
   const { appointmentId } = req.params;
   const { newDate, newTime, newDescription } = req.body;
-  const result = await rescheduleAppointment(appointmentId, newDate, newTime, newDescription);
-  res.status(200).json(result);
+  
+  try {
+    const result = await rescheduleAppointment(appointmentId, newDate, newTime, newDescription);
+    
+    // Get appointment and user details
+    const appointmentRef = db.collection('appointments').doc(appointmentId);
+    const appointment = await appointmentRef.get();
+    const appointmentData = appointment.data();
+    
+    const [clientDoc, counselorDoc] = await Promise.all([
+      db.collection('users').doc(appointmentData.clientId).get(),
+      db.collection('users').doc(appointmentData.peerCounselorId).get()
+    ]);
+
+    const clientData = clientDoc.data();
+    const counselorData = counselorDoc.data();
+
+    await sendRescheduleNotification(
+      decrypt(clientData.email),
+      decrypt(counselorData.email),
+      {
+        newDate,
+        newTime,
+        newDescription,
+        originalDate: appointmentData.originalDate,
+        originalTime: appointmentData.originalTime
+      }
+    );
+
+    // Create notification for client about reschedule request
+    await createNotification(appointmentData.clientId, {
+      type: 'APPOINTMENT_RESCHEDULE_REQUEST',
+      title: 'Appointment Reschedule Request',
+      message: `Your counselor has requested to reschedule your appointment to ${newDate} at ${newTime}`,
+      appointmentId,
+      requiresAction: true
+    });
+
+    res.status(200).json(result);
+  } catch (error) {
+    console.error('Error processing reschedule:', error);
+    res.status(500).json({ error: 'Failed to process reschedule request' });
+  }
 });
 
 router.put('/appointments/:appointmentId/reschedule-response', async (req, res) => {
@@ -341,7 +356,7 @@ router.put('/appointments/:appointmentId/reschedule-response', async (req, res) 
 
     // Create notification for peer counselor
     await createNotification(appointmentData.peerCounselorId, {
-      type: 'reschedule_response',
+      type: 'RESCHEDULE_RESPONSE',
       title: `Reschedule ${response === 'accept' ? 'Accepted' : 'Declined'}`,
       message: `Client has ${response}ed the rescheduled appointment for ${appointmentData.date}`,
       appointmentId
